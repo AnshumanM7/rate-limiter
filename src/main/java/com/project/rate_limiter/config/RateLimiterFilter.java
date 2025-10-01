@@ -26,14 +26,18 @@ public class RateLimiterFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
+        if(!properties.isEnabled()){
+            filterChain.doFilter(request,response);
+            return;
+        }
         String clientKey = request.getHeader("X-API-KEY");
         if (clientKey == null || clientKey.isEmpty()) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("Missing API Key");
             return;
         }
-
-        RateLimiterStrategy strategy = strategies.get(properties.getStrategy());
+        String strategyKey = properties.getStrategy().toLowerCase();
+        RateLimiterStrategy strategy = strategies.get(strategyKey);
         if(strategy == null){
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             response.getWriter().write("Rate Limiting strategy not configured properly");

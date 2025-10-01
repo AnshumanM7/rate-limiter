@@ -10,11 +10,24 @@ import org.springframework.stereotype.Component;
 @Setter
 @Getter
 public class RateLimiterProperties {
+
+    private String strategy;
     @Getter
     @Setter
     private int maxRequests;
     @Getter
     @Setter
     private int windowSeconds;
-    private String strategy;
+
+    @Getter
+    @Setter
+    private int leakyCapacity;
+    @Getter
+    @Setter
+    private int leakyRate;
+
+    @Getter
+    @Setter
+    private boolean isEnabled;
+
 }
