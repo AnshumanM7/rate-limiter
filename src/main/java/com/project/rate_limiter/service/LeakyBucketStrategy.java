@@ -3,7 +3,6 @@ package com.project.rate_limiter.service;
 import com.project.rate_limiter.config.RateLimiterProperties;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Component("leaky-bucket")
 public class LeakyBucketStrategy implements RateLimiterStrategy {
