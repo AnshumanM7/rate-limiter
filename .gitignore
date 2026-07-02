@@ -5,7 +5,7 @@ target/
 !**/src/test/**/target/
 
 ### STS ###
-.apt_generated
+.apt_gener  ated
 .classpath
 .factorypath
 .project
@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+### Spring Boot Local Configs ###
+# Local-only property overrides
+application-*.properties
+application-*.yml
+.env

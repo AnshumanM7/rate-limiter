@@ -20,7 +20,11 @@ public class RateLimiterFilter extends OncePerRequestFilter {
     public RateLimiterFilter(RateLimiterProperties properties, Map<String,RateLimiterStrategy> strategies) {
         this.properties = properties;
         this.strategies = strategies;
+        System.out.println("STRATEGY PROPERTY = " + properties.getStrategy());
+        System.out.println("AVAILABLE STRATEGIES:");
+        strategies.forEach((k, v) -> System.out.println(" - " + k + " -> " + v.getClass().getSimpleName()));
     }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain)
@@ -36,7 +40,7 @@ public class RateLimiterFilter extends OncePerRequestFilter {
             response.getWriter().write("Missing API Key");
             return;
         }
-        String strategyKey = properties.getStrategy().toLowerCase();
+        String strategyKey = properties.getStrategy().toLowerCase().replace(" ", "-").replace("_", "-");;
         RateLimiterStrategy strategy = strategies.get(strategyKey);
         if(strategy == null){
             response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
