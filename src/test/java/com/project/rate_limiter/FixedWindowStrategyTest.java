@@ -1,20 +1,38 @@
 package com.project.rate_limiter;
 
 import com.project.rate_limiter.config.RateLimiterProperties;
+import com.project.rate_limiter.repository.FixedWindowStateRepository;
 import com.project.rate_limiter.service.FixedWindowStrategy;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@SpringBootTest
+@Transactional
 class FixedWindowStrategyTest {
+
+    @Autowired
+    private FixedWindowStateRepository repository;
+
+    private FixedWindowStrategy strategy;
+    private RateLimiterProperties properties;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+        properties = new RateLimiterProperties();
+    }
 
     @Test
     void testAllowRequestWithinLimit() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(5);
         properties.setWindowSeconds(10);
+        strategy = new FixedWindowStrategy(properties, repository);
 
-        FixedWindowStrategy strategy = new FixedWindowStrategy(properties);
         String clientKey = "client-fixed-1";
 
         // All 5 requests should be allowed
@@ -25,11 +43,10 @@ class FixedWindowStrategyTest {
 
     @Test
     void testBlockRequestOverLimit() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(2);
         properties.setWindowSeconds(10);
+        strategy = new FixedWindowStrategy(properties, repository);
 
-        FixedWindowStrategy strategy = new FixedWindowStrategy(properties);
         String clientKey = "client-fixed-2";
 
         assertTrue(strategy.allowRequest(clientKey));
@@ -40,11 +57,10 @@ class FixedWindowStrategyTest {
 
     @Test
     void testWindowReset() throws InterruptedException {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(1);
         properties.setWindowSeconds(1); // 1 second window
+        strategy = new FixedWindowStrategy(properties, repository);
 
-        FixedWindowStrategy strategy = new FixedWindowStrategy(properties);
         String clientKey = "client-fixed-3";
 
         assertTrue(strategy.allowRequest(clientKey));

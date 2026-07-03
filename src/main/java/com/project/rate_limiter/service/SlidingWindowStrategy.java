@@ -1,37 +1,43 @@
 package com.project.rate_limiter.service;
 
 import com.project.rate_limiter.config.RateLimiterProperties;
+import com.project.rate_limiter.entity.SlidingWindowRequest;
+import com.project.rate_limiter.repository.SlidingWindowRequestRepository;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Component("sliding-window")
 public class SlidingWindowStrategy implements RateLimiterStrategy{
     private final RateLimiterProperties properties;
-    // to track request timestamps for each clientKey
-    private final Map<String, Deque<Long>> clientRequests = new ConcurrentHashMap<>();
-    public SlidingWindowStrategy(RateLimiterProperties properties){
+    private final SlidingWindowRequestRepository repository;
+
+    public SlidingWindowStrategy(RateLimiterProperties properties, SlidingWindowRequestRepository repository){
         this.properties = properties;
+        this.repository = repository;
     }
+
     @Override
+    @Transactional
     public boolean allowRequest(String clientKey){
         long now = System.currentTimeMillis();
-        clientRequests.putIfAbsent(clientKey,new LinkedList<>());
-        Deque<Long> timestamps = clientRequests.get(clientKey); // DS to store request timestamps
-        synchronized (timestamps){
-            long window = properties.getWindowSeconds() * 1000L;
-            while(!timestamps.isEmpty() && now - timestamps.peekFirst() >= window){
-                timestamps.pollFirst();
-            }
-            if(timestamps.size() < properties.getMaxRequests()){
-                timestamps.addLast(now);
-                return true;
-            }
-            else
-                return false;
+        long windowStartThreshold = now - (properties.getWindowSeconds() * 1000L);
+
+        // 1. Clean up old requests from the database that are outside the sliding window
+        repository.deleteByClientKeyAndRequestTimestampLessThan(clientKey, windowStartThreshold);
+
+        // 2. Count active requests within the window
+        long activeRequestsCount = repository.countByClientKeyAndRequestTimestampGreaterThan(clientKey, windowStartThreshold);
+
+        // 3. Check against limit and log the current request if allowed
+        if(activeRequestsCount < properties.getMaxRequests()){
+            SlidingWindowRequest log = new SlidingWindowRequest();
+            log.setClientKey(clientKey);
+            log.setRequestTimestamp(now);
+            repository.save(log);
+            return true;
         }
+
+        return false;
     }
 }

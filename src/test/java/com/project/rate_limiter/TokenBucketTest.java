@@ -1,20 +1,37 @@
 package com.project.rate_limiter;
 
 import com.project.rate_limiter.config.RateLimiterProperties;
+import com.project.rate_limiter.repository.TokenBucketStateRepository;
 import com.project.rate_limiter.service.TokenBucket;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@SpringBootTest
+@Transactional
 class TokenBucketTest {
+
+    @Autowired
+    private TokenBucketStateRepository repository;
+
+    private TokenBucket strategy;
+    private RateLimiterProperties properties;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+        properties = new RateLimiterProperties();
+    }
 
     @Test
     void testTokenConsumption() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(2);
         properties.setWindowSeconds(1); // 1s / 2 = 500ms refill interval
-
-        TokenBucket strategy = new TokenBucket(properties);
+        strategy = new TokenBucket(properties, repository);
         String clientKey = "client-token-1";
 
         assertTrue(strategy.allowRequest(clientKey)); // uses token 1
@@ -24,11 +41,9 @@ class TokenBucketTest {
 
     @Test
     void testTokenRefill() throws InterruptedException {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(2);
         properties.setWindowSeconds(1); // refill rate: 1 token every 500ms
-
-        TokenBucket strategy = new TokenBucket(properties);
+        strategy = new TokenBucket(properties, repository);
         String clientKey = "client-token-2";
 
         assertTrue(strategy.allowRequest(clientKey));
@@ -44,11 +59,9 @@ class TokenBucketTest {
 
     @Test
     void testTokenCapacityLimit() throws InterruptedException {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(2);
         properties.setWindowSeconds(1); // 500ms refill
-
-        TokenBucket strategy = new TokenBucket(properties);
+        strategy = new TokenBucket(properties, repository);
         String clientKey = "client-token-3";
 
         // Wait long enough that many tokens could have refilled
