@@ -1,20 +1,38 @@
 package com.project.rate_limiter;
 
 import com.project.rate_limiter.config.RateLimiterProperties;
+import com.project.rate_limiter.repository.SlidingWindowRequestRepository;
 import com.project.rate_limiter.service.SlidingWindowStrategy;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@SpringBootTest
+@Transactional
 class SlidingWindowStrategyTest {
+
+    @Autowired
+    private SlidingWindowRequestRepository repository;
+
+    private SlidingWindowStrategy strategy;
+    private RateLimiterProperties properties;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+        properties = new RateLimiterProperties();
+    }
 
     @Test
     void testBurstRequestWithinLimit() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(3);
         properties.setWindowSeconds(5);
+        strategy = new SlidingWindowStrategy(properties, repository);
 
-        SlidingWindowStrategy strategy = new SlidingWindowStrategy(properties);
         String clientKey = "client-sliding-1";
 
         assertTrue(strategy.allowRequest(clientKey));
@@ -24,11 +42,10 @@ class SlidingWindowStrategyTest {
 
     @Test
     void testRollingWindowEviction() throws InterruptedException {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(2);
         properties.setWindowSeconds(1); // 1 second rolling window
+        strategy = new SlidingWindowStrategy(properties, repository);
 
-        SlidingWindowStrategy strategy = new SlidingWindowStrategy(properties);
         String clientKey = "client-sliding-2";
 
         assertTrue(strategy.allowRequest(clientKey)); // request at 0ms
@@ -50,11 +67,9 @@ class SlidingWindowStrategyTest {
 
     @Test
     void testDifferentClientsIndependentLimits() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setMaxRequests(1);
         properties.setWindowSeconds(10);
-
-        SlidingWindowStrategy strategy = new SlidingWindowStrategy(properties);
+        strategy = new SlidingWindowStrategy(properties, repository);
 
         // Client A consumes their limit
         assertTrue(strategy.allowRequest("client-A"));

@@ -1,20 +1,37 @@
 package com.project.rate_limiter;
 
 import com.project.rate_limiter.config.RateLimiterProperties;
+import com.project.rate_limiter.repository.LeakyBucketStateRepository;
 import com.project.rate_limiter.service.LeakyBucketStrategy;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@SpringBootTest
+@Transactional
 class LeakyBucketStrategyTest {
+
+    @Autowired
+    private LeakyBucketStateRepository repository;
+
+    private LeakyBucketStrategy strategy;
+    private RateLimiterProperties properties;
+
+    @BeforeEach
+    void setUp() {
+        repository.deleteAll();
+        properties = new RateLimiterProperties();
+    }
 
     @Test
     void testBucketFillsAndBlocks() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setLeakyCapacity(3);
         properties.setLeakyRate(1);
-
-        LeakyBucketStrategy strategy = new LeakyBucketStrategy(properties);
+        strategy = new LeakyBucketStrategy(properties, repository);
         String clientKey = "client-leaky-1";
 
         assertTrue(strategy.allowRequest(clientKey));
@@ -26,11 +43,9 @@ class LeakyBucketStrategyTest {
 
     @Test
     void testBucketLeaking() throws InterruptedException {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setLeakyCapacity(2);
         properties.setLeakyRate(1); // Leaks 1 request per second
-
-        LeakyBucketStrategy strategy = new LeakyBucketStrategy(properties);
+        strategy = new LeakyBucketStrategy(properties, repository);
         String clientKey = "client-leaky-2";
 
         assertTrue(strategy.allowRequest(clientKey));
@@ -46,13 +61,12 @@ class LeakyBucketStrategyTest {
 
     @Test
     void testInvalidConfigurationThrows() {
-        RateLimiterProperties properties = new RateLimiterProperties();
         properties.setLeakyCapacity(3);
         properties.setLeakyRate(3); // leakRate >= capacity
 
         // Should throw IllegalArgumentException
         assertThrows(IllegalArgumentException.class, () -> {
-            new LeakyBucketStrategy(properties);
+            new LeakyBucketStrategy(properties, repository);
         });
     }
 }
