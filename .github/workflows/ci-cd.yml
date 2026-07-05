@@ -5,12 +5,10 @@ on:
     branches:
       - main
       - develop
-      - devops-assignment-branch
   pull_request:
     branches:
       - main
       - develop
-      - devops-assignment-branch
 env:
   DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/rate-limiter
 
