@@ -77,6 +77,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
 
   # 3. Deploy Staging & Production
+  
   deploy:
     name: Deploy to EC2
     needs: build-and-push
@@ -96,6 +97,7 @@ jobs:
           role-to-assume: arn:aws:iam::779323586929:role/TerraformDeploymentRole
           role-duration-seconds: 1200
           role-skip-session-tagging: true
+
       # Query AWS to find the public IP of the active EC2 instance dynamically
       - name: Get EC2 Public IP Dynamically
         run: |
@@ -127,7 +129,7 @@ jobs:
           fi
           
           ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_HOST }} << EOF
-            
+            # Log in to Docker Hub on remote host
             echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
             
             # Pull the new image version from Docker Hub
@@ -137,14 +139,19 @@ jobs:
             sudo docker stop rate-limiter || true
             sudo docker rm rate-limiter || true
             
-            # Filter out host PATH variable to prevent overriding the container's Java Path
+            # Filter out host PATH variable and remove double quotes for Docker compatibility
             grep -v '^PATH=' /etc/environment | tr -d '"' > /tmp/env.list
 
-            # Run the new container using the filtered env file
+            # Run the new container using the filtered env file and awslogs driver
             sudo docker run -d \
               --name rate-limiter \
               -p 8080:8080 \
               --restart always \
+              --log-driver=awslogs \
+              --log-opt awslogs-group=/aws/ec2/rate-limiter-app \
+              --log-opt awslogs-stream=app-container \
+              --log-opt awslogs-create-group=true \
+              --log-opt awslogs-region=us-east-1 \
               --env-file /tmp/env.list \
               ${{ env.DOCKER_IMAGE }}:${IMAGE_TAG}
               

@@ -252,6 +252,7 @@ resource "aws_instance" "app_server" {
   subnet_id              = aws_subnet.public_a.id
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   key_name               = var.ec2_key_name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
   user_data_replace_on_change = true
 
   # Dynamically inject database credentials and Spring Boot overrides into EC2 environment variables
@@ -310,4 +311,228 @@ resource "aws_instance" "app_server" {
   tags = {
     Name = "${var.project_name}-app-server"
   }
+}
+
+# 5. IAM Resources for CloudWatch Logging
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.project_name}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cw_agent_policy" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.project_name}-ec2-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+# 6. CloudWatch Log Group for Docker Container
+resource "aws_cloudwatch_log_group" "app_logs" {
+  name              = "/aws/ec2/${var.project_name}-app"
+  retention_in_days = 7
+}
+
+# 7. CloudWatch Metric Filters (Application Metrics)
+resource "aws_cloudwatch_log_metric_filter" "app_errors" {
+  name           = "${var.project_name}-app-errors"
+  pattern        = "ERROR"
+  log_group_name = aws_cloudwatch_log_group.app_logs.name
+
+  metric_transformation {
+    name      = "AppErrors"
+    namespace = "RateLimiterApp"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "total_requests" {
+  name           = "${var.project_name}-total-requests"
+  pattern        = ""
+  log_group_name = aws_cloudwatch_log_group.app_logs.name
+
+  metric_transformation {
+    name      = "RequestCount"
+    namespace = "RateLimiterApp"
+    value     = "1"
+  }
+}
+
+# 8. CloudWatch Dashboards
+
+# Dashboard 1: Infrastructure Performance
+resource "aws_cloudwatch_dashboard" "infrastructure" {
+  dashboard_name = "${var.project_name}-infrastructure"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 CPU Utilization (%)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/EC2", "NetworkIn", "InstanceId", aws_instance.app_server.id ],
+            [ "AWS/EC2", "NetworkOut", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 Network Traffic (Bytes)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/EC2", "DiskReadBytes", "InstanceId", aws_instance.app_server.id ],
+            [ "AWS/EC2", "DiskWriteBytes", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 Disk Operations (Bytes)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.postgres.identifier ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "RDS Database CPU Utilization (%)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 24
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.postgres.identifier ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "RDS Database Active Connections"
+          view   = "timeSeries"
+          stacked = false
+        }
+      }
+    ]
+  })
+}
+
+# Dashboard 2: Application Logs & Metrics
+resource "aws_cloudwatch_dashboard" "application" {
+  dashboard_name = "${var.project_name}-application"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "RateLimiterApp", "RequestCount" ]
+          ]
+          period = 60
+          stat   = "Sum"
+          region = var.aws_region
+          title  = "Application Request Volume (Logs Count)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "RateLimiterApp", "AppErrors" ]
+          ]
+          period = 60
+          stat   = "Sum"
+          region = var.aws_region
+          title  = "Application Error Count (Log pattern: ERROR)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 6
+        width  = 24
+        height = 12
+        properties = {
+          query = "fields @timestamp, @message\n| sort @timestamp desc\n| limit 100"
+          region = var.aws_region
+          logGroupNames = [
+            aws_cloudwatch_log_group.app_logs.name
+          ]
+          title  = "Live Container Log Stream (Stdout/Stderr)"
+        }
+      }
+    ]
+  })
 }
