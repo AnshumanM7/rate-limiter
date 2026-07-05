@@ -116,7 +116,7 @@ jobs:
           known_hosts: unnecessary # Handled via StrictHostKeyChecking=no
           if_key_exists: replace
 
-      - name: Deploy Container via SSH
+            - name: Deploy Container via SSH
         run: |
           # Detect image tag based on branch
           BRANCH=${GITHUB_REF#refs/heads/}
@@ -126,12 +126,12 @@ jobs:
             IMAGE_TAG="staging"
           fi
           
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_HOST }} "
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_HOST }} << EOF
             # Log in to Docker Hub on remote host
-            echo '${{ secrets.DOCKER_PASSWORD }}' | sudo docker login -u '${{ secrets.DOCKER_USERNAME }}' --password-stdin
+            echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
             
             # Pull the new image version from Docker Hub
-            sudo docker pull ${{ env.DOCKER_IMAGE }}:\${IMAGE_TAG}
+            sudo docker pull ${{ env.DOCKER_IMAGE }}:${IMAGE_TAG}
             
             # Stop and remove the old running container
             sudo docker stop rate-limiter || true
@@ -143,8 +143,9 @@ jobs:
               -p 8080:8080 \
               --restart always \
               --env-file /etc/environment \
-              ${{ env.DOCKER_IMAGE }}:\${IMAGE_TAG}
+              ${{ env.DOCKER_IMAGE }}:${IMAGE_TAG}
               
             # Prune obsolete dangling images
             sudo docker image prune -f
-          "
+          EOF
+
