@@ -525,7 +525,7 @@ resource "aws_cloudwatch_dashboard" "application" {
         width  = 24
         height = 12
         properties = {
-          query = "fields @timestamp, @message\n| sort @timestamp desc\n| limit 100"
+          queryString = "fields @timestamp, @message\n| sort @timestamp desc\n| limit 100"
           region = var.aws_region
           logGroupNames = [
             aws_cloudwatch_log_group.app_logs.name
