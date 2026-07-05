@@ -116,7 +116,7 @@ jobs:
           known_hosts: unnecessary # Handled via StrictHostKeyChecking=no
           if_key_exists: replace
 
-            - name: Deploy Container via SSH
+      - name: Deploy Container via SSH
         run: |
           # Detect image tag based on branch
           BRANCH=${GITHUB_REF#refs/heads/}
