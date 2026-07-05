@@ -138,7 +138,7 @@ jobs:
             sudo docker rm rate-limiter || true
             
             # Filter out host PATH variable to prevent overriding the container's Java Path
-            grep -v '^PATH=' /etc/environment > /tmp/env.list
+            grep -v '^PATH=' /etc/environment | tr -d '"' > /tmp/env.list
 
             # Run the new container using the filtered env file
             sudo docker run -d \

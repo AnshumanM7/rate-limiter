@@ -277,21 +277,21 @@ resource "aws_instance" "app_server" {
               echo "export RATE_LIMITER_LEAKY_RATE=\"${var.rate_limiter_leaky_rate}\"" >> /etc/profile
 
               # Write to /etc/environment for system services/daemons
-              echo "RDS_HOSTNAME=\"${aws_db_instance.postgres.address}\"" >> /etc/environment
-              echo "RDS_DB_NAME=\"${var.db_name}\"" >> /etc/environment
-              echo "RDS_USERNAME=\"${var.db_username}\"" >> /etc/environment
-              echo "RDS_PASSWORD=\"${var.db_password}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_URL=\"jdbc:postgresql://${aws_db_instance.postgres.address}:5432/${var.db_name}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_USERNAME=\"${var.db_username}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_PASSWORD=\"${var.db_password}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_DRIVER_CLASS_NAME=\"org.postgresql.Driver\"" >> /etc/environment
-              echo "SPRING_JPA_DATABASE_PLATFORM=\"org.hibernate.dialect.PostgreSQLDialect\"" >> /etc/environment
-              echo "SPRING_JPA_HIBERNATE_DDL_AUTO=\"update\"" >> /etc/environment
-              echo "RATE_LIMITER_STRATEGY=\"${var.rate_limiter_strategy}\"" >> /etc/environment
-              echo "RATE_LIMITER_MAX_REQUESTS=\"${var.rate_limiter_max_requests}\"" >> /etc/environment
-              echo "RATE_LIMITER_WINDOW_SECONDS=\"${var.rate_limiter_window_seconds}\"" >> /etc/environment
-              echo "RATE_LIMITER_LEAKY_CAPACITY=\"${var.rate_limiter_leaky_capacity}\"" >> /etc/environment
-              echo "RATE_LIMITER_LEAKY_RATE=\"${var.rate_limiter_leaky_rate}\"" >> /etc/environment
+              echo "RDS_HOSTNAME=${aws_db_instance.postgres.address}" >> /etc/environment
+              echo "RDS_DB_NAME=${var.db_name}" >> /etc/environment
+              echo "RDS_USERNAME=${var.db_username}" >> /etc/environment
+              echo "RDS_PASSWORD=${var.db_password}" >> /etc/environment
+              echo "SPRING_DATASOURCE_URL=jdbc:postgresql://${aws_db_instance.postgres.address}:5432/${var.db_name}" >> /etc/environment
+              echo "SPRING_DATASOURCE_USERNAME=${var.db_username}" >> /etc/environment
+              echo "SPRING_DATASOURCE_PASSWORD=${var.db_password}" >> /etc/environment
+              echo "SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver" >> /etc/environment
+              echo "SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.PostgreSQLDialect" >> /etc/environment
+              echo "SPRING_JPA_HIBERNATE_DDL_AUTO=update" >> /etc/environment
+              echo "RATE_LIMITER_STRATEGY=${var.rate_limiter_strategy}" >> /etc/environment
+              echo "RATE_LIMITER_MAX_REQUESTS=${var.rate_limiter_max_requests}" >> /etc/environment
+              echo "RATE_LIMITER_WINDOW_SECONDS=${var.rate_limiter_window_seconds}" >> /etc/environment
+              echo "RATE_LIMITER_LEAKY_CAPACITY=${var.rate_limiter_leaky_capacity}" >> /etc/environment
+              echo "RATE_LIMITER_LEAKY_RATE=${var.rate_limiter_leaky_rate}" >> /etc/environment
 
               # Install Docker Community Edition
               apt-get update
