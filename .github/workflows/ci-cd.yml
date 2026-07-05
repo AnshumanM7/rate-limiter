@@ -127,7 +127,7 @@ jobs:
           fi
           
           ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_HOST }} << EOF
-            # Log in to Docker Hub on remote host
+            
             echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
             
             # Pull the new image version from Docker Hub
@@ -137,15 +137,19 @@ jobs:
             sudo docker stop rate-limiter || true
             sudo docker rm rate-limiter || true
             
-            # Run the new container, loading database variables from host /etc/environment
+            # Filter out host PATH variable to prevent overriding the container's Java Path
+            grep -v '^PATH=' /etc/environment > /tmp/env.list
+
+            # Run the new container using the filtered env file
             sudo docker run -d \
               --name rate-limiter \
               -p 8080:8080 \
               --restart always \
-              --env-file /etc/environment \
+              --env-file /tmp/env.list \
               ${{ env.DOCKER_IMAGE }}:${IMAGE_TAG}
               
             # Prune obsolete dangling images
             sudo docker image prune -f
           EOF
+
 
