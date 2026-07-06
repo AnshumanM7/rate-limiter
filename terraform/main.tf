@@ -307,6 +307,38 @@ resource "aws_instance" "app_server" {
               usermod -aG docker ubuntu
               systemctl enable docker
               systemctl start docker
+              wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+              dpkg -i -E ./amazon-cloudwatch-agent.deb
+              # Create CloudWatch Agent config file to track memory & disk space
+              cat <<'CUSTOM_EOF' > /opt/aws/amazon-cloudwatch-agent/bin/config.json
+              {
+                "agent": {
+                  "metrics_collection_interval": 60,
+                  "run_as_user": "cwagent"
+                },
+                "metrics": {
+                  "metrics_collected": {
+                    "disk": {
+                      "measurement": [
+                        "used_percent"
+                      ],
+                      "metrics_collection_interval": 60,
+                      "resources": [
+                        "/"
+                      ]
+                    },
+                    "mem": {
+                      "measurement": [
+                        "mem_used_percent"
+                      ],
+                      "metrics_collection_interval": 60
+                    }
+                  }
+                }
+              }
+              CUSTOM_EOF
+              # Start the CloudWatch Agent
+              /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json
               EOF
 
   tags = {
@@ -515,6 +547,25 @@ resource "aws_cloudwatch_dashboard" "application" {
           stat   = "Sum"
           region = var.aws_region
           title  = "Application Error Count (Log pattern: ERROR)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "CWAgent", "disk_used_percent", "path", "/", "InstanceId", aws_instance.app_server.id, "fstype", "ext4" ],
+            [ "CWAgent", "mem_used_percent", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 Disk Space & Memory Utilization (%)"
           view   = "timeSeries"
           stacked = false
         }
