@@ -252,6 +252,7 @@ resource "aws_instance" "app_server" {
   subnet_id              = aws_subnet.public_a.id
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   key_name               = var.ec2_key_name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
   user_data_replace_on_change = true
 
   # Dynamically inject database credentials and Spring Boot overrides into EC2 environment variables
@@ -277,22 +278,23 @@ resource "aws_instance" "app_server" {
               echo "export RATE_LIMITER_LEAKY_RATE=\"${var.rate_limiter_leaky_rate}\"" >> /etc/profile
 
               # Write to /etc/environment for system services/daemons
-              echo "RDS_HOSTNAME=\"${aws_db_instance.postgres.address}\"" >> /etc/environment
-              echo "RDS_DB_NAME=\"${var.db_name}\"" >> /etc/environment
-              echo "RDS_USERNAME=\"${var.db_username}\"" >> /etc/environment
-              echo "RDS_PASSWORD=\"${var.db_password}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_URL=\"jdbc:postgresql://${aws_db_instance.postgres.address}:5432/${var.db_name}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_USERNAME=\"${var.db_username}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_PASSWORD=\"${var.db_password}\"" >> /etc/environment
-              echo "SPRING_DATASOURCE_DRIVER_CLASS_NAME=\"org.postgresql.Driver\"" >> /etc/environment
-              echo "SPRING_JPA_DATABASE_PLATFORM=\"org.hibernate.dialect.PostgreSQLDialect\"" >> /etc/environment
-              echo "SPRING_JPA_HIBERNATE_DDL_AUTO=\"update\"" >> /etc/environment
-              echo "RATE_LIMITER_STRATEGY=\"${var.rate_limiter_strategy}\"" >> /etc/environment
-              echo "RATE_LIMITER_MAX_REQUESTS=\"${var.rate_limiter_max_requests}\"" >> /etc/environment
-              echo "RATE_LIMITER_WINDOW_SECONDS=\"${var.rate_limiter_window_seconds}\"" >> /etc/environment
-              echo "RATE_LIMITER_LEAKY_CAPACITY=\"${var.rate_limiter_leaky_capacity}\"" >> /etc/environment
-              echo "RATE_LIMITER_LEAKY_RATE=\"${var.rate_limiter_leaky_rate}\"" >> /etc/environment
-
+              echo "RDS_HOSTNAME=${aws_db_instance.postgres.address}" >> /etc/environment
+              echo "RDS_DB_NAME=${var.db_name}" >> /etc/environment
+              echo "RDS_USERNAME=${var.db_username}" >> /etc/environment
+              echo "RDS_PASSWORD=${var.db_password}" >> /etc/environment
+              echo "SPRING_DATASOURCE_URL=jdbc:postgresql://${aws_db_instance.postgres.address}:5432/${var.db_name}" >> /etc/environment
+              echo "SPRING_DATASOURCE_USERNAME=${var.db_username}" >> /etc/environment
+              echo "SPRING_DATASOURCE_PASSWORD=${var.db_password}" >> /etc/environment
+              echo "SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver" >> /etc/environment
+              echo "SPRING_JPA_DATABASE_PLATFORM=org.hibernate.dialect.PostgreSQLDialect" >> /etc/environment
+              echo "SPRING_JPA_HIBERNATE_DDL_AUTO=update" >> /etc/environment
+              echo "RATE_LIMITER_STRATEGY=${var.rate_limiter_strategy}" >> /etc/environment
+              echo "RATE_LIMITER_MAX_REQUESTS=${var.rate_limiter_max_requests}" >> /etc/environment
+              echo "RATE_LIMITER_WINDOW_SECONDS=${var.rate_limiter_window_seconds}" >> /etc/environment
+              echo "RATE_LIMITER_LEAKY_CAPACITY=${var.rate_limiter_leaky_capacity}" >> /etc/environment
+              echo "RATE_LIMITER_LEAKY_RATE=${var.rate_limiter_leaky_rate}" >> /etc/environment
+              echo "AWS_REGION=${var.aws_region}" >> /etc/environment
+              echo "CW_LOG_GROUP=${aws_cloudwatch_log_group.app_logs.name}" >> /etc/environment
               # Install Docker Community Edition
               apt-get update
               apt-get install -y apt-transport-https ca-certificates curl software-properties-common
@@ -305,9 +307,281 @@ resource "aws_instance" "app_server" {
               usermod -aG docker ubuntu
               systemctl enable docker
               systemctl start docker
+              wget https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+              dpkg -i -E ./amazon-cloudwatch-agent.deb
+              # Create CloudWatch Agent config file to track memory & disk space
+              cat <<'CUSTOM_EOF' > /opt/aws/amazon-cloudwatch-agent/bin/config.json
+              {
+                "agent": {
+                  "metrics_collection_interval": 60,
+                  "run_as_user": "cwagent"
+                },
+                "metrics": {
+                  "metrics_collected": {
+                    "disk": {
+                      "measurement": [
+                        "used_percent"
+                      ],
+                      "metrics_collection_interval": 60,
+                      "resources": [
+                        "/"
+                      ]
+                    },
+                    "mem": {
+                      "measurement": [
+                        "mem_used_percent"
+                      ],
+                      "metrics_collection_interval": 60
+                    }
+                  }
+                }
+              }
+              CUSTOM_EOF
+              # Start the CloudWatch Agent
+              /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/bin/config.json
               EOF
 
   tags = {
     Name = "${var.project_name}-app-server"
   }
+}
+
+# 5. IAM Resources for CloudWatch Logging
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.project_name}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cw_agent_policy" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "${var.project_name}-ec2-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+# 6. CloudWatch Log Group for Docker Container
+resource "aws_cloudwatch_log_group" "app_logs" {
+  name              = "/aws/ec2/${var.project_name}-app"
+  retention_in_days = 7
+}
+
+# 7. CloudWatch Metric Filters (Application Metrics)
+resource "aws_cloudwatch_log_metric_filter" "app_errors" {
+  name           = "${var.project_name}-app-errors"
+  pattern        = "ERROR"
+  log_group_name = aws_cloudwatch_log_group.app_logs.name
+
+  metric_transformation {
+    name      = "AppErrors"
+    namespace = "RateLimiterApp"
+    value     = "1"
+  }
+}
+
+resource "aws_cloudwatch_log_metric_filter" "total_requests" {
+  name           = "${var.project_name}-total-requests"
+  pattern        = ""
+  log_group_name = aws_cloudwatch_log_group.app_logs.name
+
+  metric_transformation {
+    name      = "RequestCount"
+    namespace = "RateLimiterApp"
+    value     = "1"
+  }
+}
+
+# 8. CloudWatch Dashboards
+
+# Dashboard 1: Infrastructure Performance
+resource "aws_cloudwatch_dashboard" "infrastructure" {
+  dashboard_name = "${var.project_name}-infrastructure"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/EC2", "CPUUtilization", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 CPU Utilization (%)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/EC2", "NetworkIn", "InstanceId", aws_instance.app_server.id ],
+            [ "AWS/EC2", "NetworkOut", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 Network Traffic (Bytes)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/EC2", "DiskReadBytes", "InstanceId", aws_instance.app_server.id ],
+            [ "AWS/EC2", "DiskWriteBytes", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 Disk Operations (Bytes)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.postgres.identifier ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "RDS Database CPU Utilization (%)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 12
+        width  = 24
+        height = 6
+        properties = {
+          metrics = [
+            [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", aws_db_instance.postgres.identifier ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "RDS Database Active Connections"
+          view   = "timeSeries"
+          stacked = false
+        }
+      }
+    ]
+  })
+}
+
+# Dashboard 2: Application Logs & Metrics
+resource "aws_cloudwatch_dashboard" "application" {
+  dashboard_name = "${var.project_name}-application"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "RateLimiterApp", "RequestCount" ]
+          ]
+          period = 60
+          stat   = "Sum"
+          region = var.aws_region
+          title  = "Application Request Volume (Logs Count)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "RateLimiterApp", "AppErrors" ]
+          ]
+          period = 60
+          stat   = "Sum"
+          region = var.aws_region
+          title  = "Application Error Count (Log pattern: ERROR)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            [ "CWAgent", "disk_used_percent", "path", "/", "InstanceId", aws_instance.app_server.id, "fstype", "ext4" ],
+            [ "CWAgent", "mem_used_percent", "InstanceId", aws_instance.app_server.id ]
+          ]
+          period = 60
+          stat   = "Average"
+          region = var.aws_region
+          title  = "EC2 Disk Space & Memory Utilization (%)"
+          view   = "timeSeries"
+          stacked = false
+        }
+      },
+      {
+        type   = "log"
+        x      = 0
+        y      = 6
+        width  = 24
+        height = 12
+        properties = {
+          query = "SOURCE '/aws/ec2/rate-limiter-app' | fields @timestamp, @message | sort @timestamp desc | limit 100"
+          region = var.aws_region
+          title  = "Live Container Log Stream (Stdout/Stderr)"
+        }
+      }
+    ]
+  })
 }

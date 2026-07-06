@@ -5,11 +5,12 @@ on:
     branches:
       - main
       - develop
+      - devops-assignment-branch
   pull_request:
     branches:
       - main
       - develop
-
+      - devops-assignment-branch
 env:
   DOCKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/rate-limiter
 
@@ -76,6 +77,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
 
   # 3. Deploy Staging & Production
+  
   deploy:
     name: Deploy to EC2
     needs: build-and-push
@@ -95,6 +97,7 @@ jobs:
           role-to-assume: arn:aws:iam::779323586929:role/TerraformDeploymentRole
           role-duration-seconds: 1200
           role-skip-session-tagging: true
+
       # Query AWS to find the public IP of the active EC2 instance dynamically
       - name: Get EC2 Public IP Dynamically
         run: |
@@ -125,25 +128,36 @@ jobs:
             IMAGE_TAG="staging"
           fi
           
-          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_HOST }} "
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ env.EC2_HOST }} << EOF
             # Log in to Docker Hub on remote host
-            echo '${{ secrets.DOCKER_PASSWORD }}' | sudo docker login -u '${{ secrets.DOCKER_USERNAME }}' --password-stdin
+            echo "${{ secrets.DOCKER_PASSWORD }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
             
             # Pull the new image version from Docker Hub
-            sudo docker pull ${{ env.DOCKER_IMAGE }}:\${IMAGE_TAG}
+            sudo docker pull ${{ env.DOCKER_IMAGE }}:${IMAGE_TAG}
             
             # Stop and remove the old running container
             sudo docker stop rate-limiter || true
             sudo docker rm rate-limiter || true
-            
-            # Run the new container, loading database variables from host /etc/environment
+            AWS_REGION=\$(grep AWS_REGION /etc/environment | cut -d= -f2)
+            CW_LOG_GROUP=\$(grep CW_LOG_GROUP /etc/environment | cut -d= -f2)
+            # Filter out host PATH variable and remove double quotes for Docker compatibility
+            grep -v '^PATH=' /etc/environment | tr -d '"' > /tmp/env.list
+
+            # Run the new container using the filtered env file and awslogs driver
             sudo docker run -d \
               --name rate-limiter \
               -p 8080:8080 \
               --restart always \
-              --env-file /etc/environment \
-              ${{ env.DOCKER_IMAGE }}:\${IMAGE_TAG}
+              --log-driver=awslogs \
+              --log-opt awslogs-group=/aws/ec2/rate-limiter-app \
+              --log-opt awslogs-stream=app-container \
+              --log-opt awslogs-create-group=true \
+              --log-opt awslogs-region=us-east-1 \
+              --env-file /tmp/env.list \
+              ${{ env.DOCKER_IMAGE }}:${IMAGE_TAG}
               
             # Prune obsolete dangling images
             sudo docker image prune -f
-          "
+          EOF
+
+
