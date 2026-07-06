@@ -293,7 +293,8 @@ resource "aws_instance" "app_server" {
               echo "RATE_LIMITER_WINDOW_SECONDS=${var.rate_limiter_window_seconds}" >> /etc/environment
               echo "RATE_LIMITER_LEAKY_CAPACITY=${var.rate_limiter_leaky_capacity}" >> /etc/environment
               echo "RATE_LIMITER_LEAKY_RATE=${var.rate_limiter_leaky_rate}" >> /etc/environment
-
+              echo "AWS_REGION=${var.aws_region}" >> /etc/environment
+              echo "CW_LOG_GROUP=${aws_cloudwatch_log_group.app_logs.name}" >> /etc/environment
               # Install Docker Community Edition
               apt-get update
               apt-get install -y apt-transport-https ca-certificates curl software-properties-common
@@ -525,11 +526,8 @@ resource "aws_cloudwatch_dashboard" "application" {
         width  = 24
         height = 12
         properties = {
-          queryString = "fields @timestamp, @message | sort @timestamp desc | limit 100"
+          query = "SOURCE '/aws/ec2/rate-limiter-app' | fields @timestamp, @message | sort @timestamp desc | limit 100"
           region = var.aws_region
-          logGroupNames = [
-            aws_cloudwatch_log_group.app_logs.name
-          ]
           title  = "Live Container Log Stream (Stdout/Stderr)"
         }
       }

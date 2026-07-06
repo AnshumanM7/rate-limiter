@@ -138,7 +138,8 @@ jobs:
             # Stop and remove the old running container
             sudo docker stop rate-limiter || true
             sudo docker rm rate-limiter || true
-            
+            AWS_REGION=\$(grep AWS_REGION /etc/environment | cut -d= -f2)
+            CW_LOG_GROUP=\$(grep CW_LOG_GROUP /etc/environment | cut -d= -f2)
             # Filter out host PATH variable and remove double quotes for Docker compatibility
             grep -v '^PATH=' /etc/environment | tr -d '"' > /tmp/env.list
 
